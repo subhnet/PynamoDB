@@ -37,7 +37,7 @@ def test_basic_rate_limiting():
     r = RateLimiter(0.1, mock_time)
 
     # 100 operations
-    for i in range(0, 100):
+    for _ in range(100):
         r.acquire()
         # Simulates an operation that takes 1 second
         mock_time.increment_time(1)
@@ -53,7 +53,7 @@ def test_basic_rate_limiting_small_increment():
     r = RateLimiter(0.1, mock_time)
 
     # 100 operations
-    for i in range(0, 100):
+    for _ in range(100):
         r.acquire()
         # Simulates an operation that takes 2 second
         mock_time.increment_time(2)
@@ -69,7 +69,7 @@ def test_basic_rate_limiting_large_increment():
     r = RateLimiter(0.1, mock_time)
 
     # 100 operations
-    for i in range(0, 100):
+    for _ in range(100):
         r.acquire()
         # Simulates an operation that takes 2 second
         mock_time.increment_time(11)

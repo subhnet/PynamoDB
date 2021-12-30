@@ -98,8 +98,8 @@ class MetaTable(object):
                 if attr.get(KEY_TYPE) == HASH:
                     self._hash_keyname = attr.get(ATTR_NAME)
                     break
-            if self._hash_keyname is None:
-                raise ValueError("No hash_key found in key schema")
+        if self._hash_keyname is None:
+            raise ValueError("No hash_key found in key schema")
         return self._hash_keyname
 
     def get_key_names(self, index_name=None):
@@ -252,11 +252,7 @@ class Connection(object):
         self.host = host
         self._local = local()
         self._client = None
-        if region:
-            self.region = region
-        else:
-            self.region = get_settings_value('region')
-
+        self.region = region or get_settings_value('region')
         if connect_timeout_seconds is not None:
             self._connect_timeout_seconds = connect_timeout_seconds
         else:
@@ -317,9 +313,19 @@ class Connection(object):
 
         Raises TableDoesNotExist if the specified table does not exist
         """
-        if operation_name not in [DESCRIBE_TABLE, LIST_TABLES, UPDATE_TABLE, UPDATE_TIME_TO_LIVE, DELETE_TABLE, CREATE_TABLE]:
-            if RETURN_CONSUMED_CAPACITY not in operation_kwargs:
-                operation_kwargs.update(self.get_consumed_capacity_map(TOTAL))
+        if (
+            operation_name
+            not in [
+                DESCRIBE_TABLE,
+                LIST_TABLES,
+                UPDATE_TABLE,
+                UPDATE_TIME_TO_LIVE,
+                DELETE_TABLE,
+                CREATE_TABLE,
+            ]
+            and RETURN_CONSUMED_CAPACITY not in operation_kwargs
+        ):
+            operation_kwargs.update(self.get_consumed_capacity_map(TOTAL))
         log.debug("Calling %s with arguments %s", operation_name, operation_kwargs)
 
         table_name = operation_kwargs.get(TABLE_NAME)
@@ -360,7 +366,7 @@ class Connection(object):
             operation_model,
         )
 
-        for i in range(0, self._max_retry_attempts_exception + 1):
+        for i in range(self._max_retry_attempts_exception + 1):
             attempt_number = i + 1
             is_last_attempt_for_exceptions = i == self._max_retry_attempts_exception
 
@@ -580,14 +586,12 @@ class Connection(object):
                 WRITE_CAPACITY_UNITS: write_capacity_units,
             }
         }
-        attrs_list = []
         if attribute_definitions is None:
             raise ValueError("attribute_definitions argument is required")
-        for attr in attribute_definitions:
-            attrs_list.append({
+        attrs_list = [{
                 ATTR_NAME: attr.get('attribute_name'),
                 ATTR_TYPE: attr.get('attribute_type')
-            })
+            } for attr in attribute_definitions]
         operation_kwargs[ATTR_DEFINITIONS] = attrs_list
 
         if billing_mode not in AVAILABLE_BILLING_MODES:
@@ -613,12 +617,10 @@ class Connection(object):
 
         if key_schema is None:
             raise ValueError("key_schema is required")
-        key_schema_list = []
-        for item in key_schema:
-            key_schema_list.append({
+        key_schema_list = [{
                 ATTR_NAME: item.get('attribute_name'),
                 KEY_TYPE: str(item.get('key_type')).upper()
-            })
+            } for item in key_schema]
         operation_kwargs[KEY_SCHEMA] = sorted(key_schema_list, key=lambda x: x.get(KEY_TYPE))
 
         local_secondary_indexes_list = []
@@ -695,15 +697,13 @@ class Connection(object):
         }
         if read_capacity_units and not write_capacity_units or write_capacity_units and not read_capacity_units:
             raise ValueError("read_capacity_units and write_capacity_units are required together")
-        if read_capacity_units and write_capacity_units:
+        if read_capacity_units:
             operation_kwargs[PROVISIONED_THROUGHPUT] = {
                 READ_CAPACITY_UNITS: read_capacity_units,
                 WRITE_CAPACITY_UNITS: write_capacity_units
             }
         if global_secondary_index_updates:
-            global_secondary_indexes_list = []
-            for index in global_secondary_index_updates:
-                global_secondary_indexes_list.append({
+            global_secondary_indexes_list = [{
                     UPDATE: {
                         INDEX_NAME: index.get('index_name'),
                         PROVISIONED_THROUGHPUT: {
@@ -711,7 +711,7 @@ class Connection(object):
                             WRITE_CAPACITY_UNITS: index.get('write_capacity_units')
                         }
                     }
-                })
+                } for index in global_secondary_index_updates]
             operation_kwargs[GLOBAL_SECONDARY_INDEX_UPDATES] = global_secondary_indexes_list
         try:
             return self.dispatch(UPDATE_TABLE, operation_kwargs)
@@ -728,13 +728,9 @@ class Connection(object):
         """
         operation_kwargs: Dict[str, Any] = {}
         if exclusive_start_table_name:
-            operation_kwargs.update({
-                EXCLUSIVE_START_TABLE_NAME: exclusive_start_table_name
-            })
+            operation_kwargs[EXCLUSIVE_START_TABLE_NAME] = exclusive_start_table_name
         if limit is not None:
-            operation_kwargs.update({
-                LIMIT: limit
-            })
+            operation_kwargs[LIMIT] = limit
         try:
             return self.dispatch(LIST_TABLES, operation_kwargs)
         except BOTOCORE_EXCEPTIONS as e:
@@ -1335,9 +1331,8 @@ class Connection(object):
             raise QueryError("Failed to query items: {}".format(e), e)
 
     def _check_condition(self, name, condition):
-        if condition is not None:
-            if not isinstance(condition, Condition):
-                raise ValueError("'{}' must be an instance of Condition".format(name))
+        if condition is not None and not isinstance(condition, Condition):
+            raise ValueError("'{}' must be an instance of Condition".format(name))
 
     @staticmethod
     def _reverse_dict(d):

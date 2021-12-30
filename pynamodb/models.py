@@ -263,8 +263,9 @@ class MetaModel(AttributeContainerMeta):
             if 'DoesNotExist' not in namespace:
                 exception_attrs = {
                     '__module__': namespace.get('__module__'),
-                    '__qualname__': f'{cls.__qualname__}.{"DoesNotExist"}',
+                    '__qualname__': f'{cls.__qualname__}.DoesNotExist',
                 }
+
                 cls.DoesNotExist = type('DoesNotExist', (DoesNotExist, ), exception_attrs)
 
 
@@ -339,10 +340,7 @@ class Model(AttributeContainer, metaclass=MetaModel):
                     )
                     for batch_item in page:
                         yield cls.from_raw_data(batch_item)
-                    if unprocessed_keys:
-                        keys_to_get = unprocessed_keys
-                    else:
-                        keys_to_get = []
+                    keys_to_get = unprocessed_keys or []
             item = items.pop()
             if range_key_attribute:
                 hash_key, range_key = cls._serialize_keys(item[0], item[1])  # type: ignore
@@ -365,10 +363,7 @@ class Model(AttributeContainer, metaclass=MetaModel):
             )
             for batch_item in page:
                 yield cls.from_raw_data(batch_item)
-            if unprocessed_keys:
-                keys_to_get = unprocessed_keys
-            else:
-                keys_to_get = []
+            keys_to_get = unprocessed_keys or []
 
     @classmethod
     def batch_write(cls: Type[_T], auto_commit: bool = True, settings: OperationSettings = OperationSettings.default) -> BatchWrite[_T]:
@@ -385,11 +380,11 @@ class Model(AttributeContainer, metaclass=MetaModel):
 
     def __repr__(self) -> str:
         hash_key, range_key = self._get_serialized_keys()
-        if self._range_keyname:
-            msg = "{}<{}, {}>".format(self.Meta.table_name, hash_key, range_key)
-        else:
-            msg = "{}<{}>".format(self.Meta.table_name, hash_key)
-        return msg
+        return (
+            "{}<{}, {}>".format(self.Meta.table_name, hash_key, range_key)
+            if self._range_keyname
+            else "{}<{}>".format(self.Meta.table_name, hash_key)
+        )
 
     def delete(self, condition: Optional[Condition] = None, settings: OperationSettings = OperationSettings.default) -> Any:
         """
@@ -414,7 +409,7 @@ class Model(AttributeContainer, metaclass=MetaModel):
         :raises ModelInstance.DoesNotExist: if the object to be updated does not exist
         :raises pynamodb.exceptions.UpdateError: if the `condition` is not met
         """
-        if not isinstance(actions, list) or len(actions) == 0:
+        if not isinstance(actions, list) or not actions:
             raise TypeError("the value of `actions` is expected to be a non-empty list")
 
         hk_value, rk_value = self._get_hash_range_key_serialized_values()
@@ -823,15 +818,14 @@ class Model(AttributeContainer, metaclass=MetaModel):
         if wait:
             while True:
                 status = cls._get_connection().describe_table()
-                if status:
-                    data = status.get(TABLE_STATUS)
-                    if data == ACTIVE:
-                        break
-                    else:
-                        time.sleep(2)
-                else:
+                if not status:
                     raise TableError("No TableStatus returned for table")
 
+                data = status.get(TABLE_STATUS)
+                if data == ACTIVE:
+                    break
+                else:
+                    time.sleep(2)
         cls.update_ttl(ignore_update_ttl_errors)
 
     @classmethod
@@ -904,12 +898,15 @@ class Model(AttributeContainer, metaclass=MetaModel):
                     },
 
                 }
-                if isinstance(index, GlobalSecondaryIndex):
-                    if getattr(cls.Meta, 'billing_mode', None) != PAY_PER_REQUEST_BILLING_MODE:
-                        idx['provisioned_throughput'] = {
-                            READ_CAPACITY_UNITS: index.Meta.read_capacity_units,
-                            WRITE_CAPACITY_UNITS: index.Meta.write_capacity_units
-                        }
+                if (
+                    isinstance(index, GlobalSecondaryIndex)
+                    and getattr(cls.Meta, 'billing_mode', None)
+                    != PAY_PER_REQUEST_BILLING_MODE
+                ):
+                    idx['provisioned_throughput'] = {
+                        READ_CAPACITY_UNITS: index.Meta.read_capacity_units,
+                        WRITE_CAPACITY_UNITS: index.Meta.write_capacity_units
+                    }
                 cls._indexes['attribute_definitions'].extend(schema.get('attribute_definitions'))
                 if index.Meta.projection.non_key_attributes:
                     idx['projection'][NON_KEY_ATTRIBUTES] = index.Meta.projection.non_key_attributes
