@@ -113,7 +113,7 @@ class TestAttributeDescriptor:
         Boolean attribute descriptor
         """
         self.instance.bool_attr = True
-        assert self.instance.bool_attr is True
+        assert self.instance.bool_attr
 
     def test_json_attr(self):
         """
@@ -483,8 +483,8 @@ class TestTTLAttribute:
     def test_serialize_none(self):
         model = AttributeTestModel()
         model.ttl_attr = None
-        assert model.ttl_attr == None
-        assert TTLAttribute().serialize(model.ttl_attr) == None
+        assert model.ttl_attr is None
+        assert TTLAttribute().serialize(model.ttl_attr) is None
 
     @patch('time.time')
     def test_serialize_deserialize(self, mock_time):
@@ -658,11 +658,7 @@ class TestMapAttribute:
 
     def test_raw_set_item(self):
         item = AttributeTestModel()
-        item.map_attr = {}
-        item.map_attr['foo'] = 'bar'
-        item.map_attr['num'] = 3
-        item.map_attr['nested'] = {'nestedfoo': 'nestedbar'}
-
+        item.map_attr = {'foo': 'bar', 'num': 3, 'nested': {'nestedfoo': 'nestedbar'}}
         assert item.map_attr['foo'] == 'bar'
         assert item.map_attr['num'] == 3
         assert item.map_attr['nested']['nestedfoo'] == 'nestedbar'

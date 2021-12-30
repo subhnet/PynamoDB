@@ -132,11 +132,11 @@ def test_table_integration(ddb_url):
         range_key='item1-range'
     )
 
-    items = []
-    for i in range(10):
-        items.append(
-            {"Forum": "FooForum", "Thread": "thread-{}".format(i)}
-        )
+    items = [
+        {"Forum": "FooForum", "Thread": "thread-{}".format(i)}
+        for i in range(10)
+    ]
+
     print("conn.batch_write_items...")
     conn.batch_write_item(
         put_items=items

@@ -323,10 +323,7 @@ class AttributeContainer(metaclass=AttributeContainerMeta):
                 default = attr.default_for_new
             else:
                 default = attr.default
-            if callable(default):
-                value = default()
-            else:
-                value = default
+            value = default() if callable(default) else default
             if value is not None:
                 setattr(self, name, value)
 
@@ -353,13 +350,12 @@ class AttributeContainer(metaclass=AttributeContainerMeta):
                 e.prepend_path(name)
                 raise
 
-            if value is not None:
-                if isinstance(attr, MapAttribute):
-                    attr_value = attr.serialize(value, null_check=null_check)
-                else:
-                    attr_value = attr.serialize(value)
-            else:
+            if value is None:
                 attr_value = None
+            elif isinstance(attr, MapAttribute):
+                attr_value = attr.serialize(value, null_check=null_check)
+            else:
+                attr_value = attr.serialize(value)
             if null_check and attr_value is None and not attr.null:
                 raise AttributeNullError(name)
 
@@ -384,7 +380,10 @@ class AttributeContainer(metaclass=AttributeContainerMeta):
     def _get_discriminator_class(cls, attribute_values: Dict[str, Dict[str, Any]]) -> Optional[Type]:
         discriminator_attr = cls._get_discriminator_attribute()
         if discriminator_attr:
-            discriminator_attribute_value = attribute_values.get(discriminator_attr.attr_name, None)
+            discriminator_attribute_value = attribute_values.get(
+                discriminator_attr.attr_name
+            )
+
             if discriminator_attribute_value:
                 discriminator_value = discriminator_attr.get_value(discriminator_attribute_value)
                 return discriminator_attr.deserialize(discriminator_value)
@@ -527,8 +526,7 @@ class JSONAttribute(Attribute[Any]):
         """
         if value is None:
             return None
-        encoded = json.dumps(value)
-        return encoded
+        return json.dumps(value)
 
     def deserialize(self, value):
         """
@@ -685,8 +683,7 @@ class UTCDateTimeAttribute(Attribute[datetime]):
         """
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
-        fmt = value.astimezone(timezone.utc).strftime(DATETIME_FORMAT)
-        return fmt
+        return value.astimezone(timezone.utc).strftime(DATETIME_FORMAT)
 
     def deserialize(self, value):
         """
@@ -705,10 +702,16 @@ class UTCDateTimeAttribute(Attribute[datetime]):
                     or date_string[19] != '.' or date_string[26:31] != '+0000'):
                 raise ValueError("Datetime string '{}' does not match format '{}'".format(date_string, DATETIME_FORMAT))
             return datetime(
-                _int(date_string[0:4]), _int(date_string[5:7]), _int(date_string[8:10]),
-                _int(date_string[11:13]), _int(date_string[14:16]), _int(date_string[17:19]),
-                _int(date_string[20:26]), timezone.utc
+                _int(date_string[:4]),
+                _int(date_string[5:7]),
+                _int(date_string[8:10]),
+                _int(date_string[11:13]),
+                _int(date_string[14:16]),
+                _int(date_string[17:19]),
+                _int(date_string[20:26]),
+                timezone.utc,
             )
+
         except (TypeError, ValueError):
             raise ValueError("Datetime string '{}' does not match format '{}'".format(date_string, DATETIME_FORMAT))
 
@@ -978,10 +981,10 @@ class MapAttribute(Attribute[Mapping[_KT, _VT]], AttributeContainer):
         return cls == MapAttribute
 
     def as_dict(self):
-        result = {}
-        for key, value in self.attribute_values.items():
-            result[key] = value.as_dict() if isinstance(value, MapAttribute) else value
-        return result
+        return {
+            key: value.as_dict() if isinstance(value, MapAttribute) else value
+            for key, value in self.attribute_values.items()
+        }
 
 
 def _get_class_for_serialize(value):
@@ -1042,24 +1045,23 @@ class ListAttribute(Generic[_T], Attribute[List[_T]]):
         """
         Decode from list of AttributeValue types.
         """
-        if self.element_type:
-            element_attr = self.element_type()
-            if isinstance(element_attr, MapAttribute):
-                element_attr._make_attribute()  # ensure attr_name exists
-            deserialized_lst = []
-            for idx, attribute_value in enumerate(values):
-                value = None
-                if NULL not in attribute_value:
-                    # set attr_name in case `get_value` raises an exception
-                    element_attr.attr_name = '{}[{}]'.format(self.attr_name, idx)
-                    value = element_attr.deserialize(element_attr.get_value(attribute_value))
-                deserialized_lst.append(value)
-            return deserialized_lst
-
-        return [
-            DESERIALIZE_CLASS_MAP[attr_type].deserialize(attr_value)
-            for v in values for attr_type, attr_value in v.items()
-        ]
+        if not self.element_type:
+            return [
+                DESERIALIZE_CLASS_MAP[attr_type].deserialize(attr_value)
+                for v in values for attr_type, attr_value in v.items()
+            ]
+        element_attr = self.element_type()
+        if isinstance(element_attr, MapAttribute):
+            element_attr._make_attribute()  # ensure attr_name exists
+        deserialized_lst = []
+        for idx, attribute_value in enumerate(values):
+            value = None
+            if NULL not in attribute_value:
+                # set attr_name in case `get_value` raises an exception
+                element_attr.attr_name = '{}[{}]'.format(self.attr_name, idx)
+                value = element_attr.deserialize(element_attr.get_value(attribute_value))
+            deserialized_lst.append(value)
+        return deserialized_lst
 
     def __getitem__(self, idx: int) -> Path:  # type: ignore
         if not isinstance(idx, int):

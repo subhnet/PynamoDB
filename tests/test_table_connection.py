@@ -455,12 +455,12 @@ class ConnectionTestCase(TestCase):
         """
         TableConnection.batch_write_item
         """
-        items = []
         conn = TableConnection(self.test_table_name)
-        for i in range(10):
-            items.append(
-                {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
-            )
+        items = [
+            {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
+            for i in range(10)
+        ]
+
         with patch(PATCH_METHOD) as req:
             req.return_value = DESCRIBE_TABLE_DATA
             conn.describe_table()
@@ -492,12 +492,12 @@ class ConnectionTestCase(TestCase):
         """
         TableConnection.batch_get_item
         """
-        items = []
         conn = TableConnection(self.test_table_name)
-        for i in range(10):
-            items.append(
-                {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
-            )
+        items = [
+            {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
+            for i in range(10)
+        ]
+
         with patch(PATCH_METHOD) as req:
             req.return_value = DESCRIBE_TABLE_DATA
             conn.describe_table()

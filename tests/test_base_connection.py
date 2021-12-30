@@ -928,13 +928,13 @@ class ConnectionTestCase(TestCase):
         """
         Connection.batch_write_item
         """
-        items = []
         conn = Connection()
         table_name = 'Thread'
-        for i in range(10):
-            items.append(
-                {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
-            )
+        items = [
+            {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
+            for i in range(10)
+        ]
+
         self.assertRaises(
             ValueError,
             conn.batch_write_item,
@@ -1062,13 +1062,13 @@ class ConnectionTestCase(TestCase):
         """
         Connection.batch_get_item
         """
-        items = []
         conn = Connection()
         table_name = 'Thread'
-        for i in range(10):
-            items.append(
-                {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
-            )
+        items = [
+            {"ForumName": "FooForum", "Subject": "thread-{}".format(i)}
+            for i in range(10)
+        ]
+
         with patch(PATCH_METHOD) as req:
             req.return_value = DESCRIBE_TABLE_DATA
             conn.describe_table(table_name)
@@ -1581,28 +1581,30 @@ class ConnectionTestCase(TestCase):
     def test_handle_binary_attributes_for_unprocessed_items(self):
         binary_blob = b'\x00\xFF\x00\xFF'
 
-        unprocessed_items = []
-        for idx in range(0, 5):
-            unprocessed_items.append({
+        unprocessed_items = [
+            {
                 'PutRequest': {
                     'Item': {
                         'name': {STRING: 'daniel'},
-                        'picture': {BINARY: base64.b64encode(binary_blob).decode(DEFAULT_ENCODING)}
+                        'picture': {
+                            BINARY: base64.b64encode(binary_blob).decode(
+                                DEFAULT_ENCODING
+                            )
+                        },
                     }
                 }
-            })
+            }
+            for _ in range(5)
+        ]
 
-        expected_unprocessed_items = []
-        for idx in range(0, 5):
-            expected_unprocessed_items.append({
+        expected_unprocessed_items = [{
                 'PutRequest': {
                     'Item': {
                         'name': {STRING: 'daniel'},
                         'picture': {BINARY: binary_blob}
                     }
                 }
-            })
-
+            } for _ in range(5)]
         deep_eq(
             Connection._handle_binary_attributes({UNPROCESSED_ITEMS: {'someTable': unprocessed_items}}),
             {UNPROCESSED_ITEMS: {'someTable': expected_unprocessed_items}},

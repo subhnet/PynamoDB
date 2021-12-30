@@ -42,10 +42,6 @@ def _run_mypy(program: str, *, use_pdb: bool) -> Iterable[str]:
             m = error_pattern.match(line)
             if m:
                 messages_by_line[int(m.group('line'))].append((m.group('level'), m.group('message')))
-            elif line:
-                # print(line)  # allow "printf debugging"
-                pass
-
         # Reconstruct the "actual" program with "error" comments
         error_comment_pattern = re.compile(r'(\s+# (N|W|E): .*)?$')
         for line_no, line in enumerate(program.split('\n'), start=1):

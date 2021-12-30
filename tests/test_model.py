@@ -482,10 +482,7 @@ class ModelTestCase(TestCase):
         if len(list1) != len(list2):
             raise AssertionError("Values not equal: {} {}".format(list1, list2))
         for d1_item in list1:
-            found = False
-            for d2_item in list2:
-                if d2_item == d1_item:
-                    found = True
+            found = any(d2_item == d1_item for d2_item in list2)
             if not found:
                 raise AssertionError("Values not equal: {} {}".format(list1, list2))
 
@@ -498,13 +495,12 @@ class ModelTestCase(TestCase):
 
         def fake_dynamodb(*args):
             kwargs = args[1]
-            if kwargs == {'TableName': UserModel.Meta.table_name}:
-                if scope_args['count'] == 0:
-                    return {}
-                else:
-                    return MODEL_TABLE_DATA
-            else:
+            if kwargs != {'TableName': UserModel.Meta.table_name}:
                 return {}
+            if scope_args['count'] == 0:
+                return {}
+            else:
+                return MODEL_TABLE_DATA
 
         fake_db = MagicMock()
         fake_db.side_effect = fake_dynamodb
@@ -582,7 +578,7 @@ class ModelTestCase(TestCase):
                 scope_args['count'] += 1
                 raise ClientError({'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Not Found'}},
                                   "DescribeTable")
-            elif scope_args['count'] == 1 or scope_args['count'] == 2:
+            elif scope_args['count'] in [1, 2]:
                 data = copy.deepcopy(MODEL_TABLE_DATA)
                 data['Table']['TableStatus'] = 'Creating'
                 scope_args['count'] += 1
@@ -636,7 +632,7 @@ class ModelTestCase(TestCase):
             if scope_args['count'] == 0:
                 scope_args['count'] += 1
                 return {}
-            elif scope_args['count'] == 1 or scope_args['count'] == 2:
+            elif scope_args['count'] in [1, 2]:
                 return {}
 
         bad_mock_server = MagicMock()
@@ -1500,13 +1496,12 @@ class ModelTestCase(TestCase):
                 query_items = BATCH_GET_ITEMS.get(RESPONSES).get(UserModel.Meta.table_name)[item_idx:item_idx + 1]
             else:
                 query_items = BATCH_GET_ITEMS.get(RESPONSES).get(UserModel.Meta.table_name)[:1]
-            data = {
+            return {
                 CAMEL_COUNT: len(query_items),
                 ITEMS: query_items,
                 SCANNED_COUNT: 2 * len(query_items),
                 LAST_EVALUATED_KEY: query_items[-1] if len(query_items) else None
             }
-            return data
 
         mock_query = MagicMock()
         mock_query.side_effect = fake_query
@@ -1566,6 +1561,7 @@ class ModelTestCase(TestCase):
             self.assertTrue(len(queried) == len(items))
 
     def test_query_with_discriminator(self):
+
         class ParentModel(Model):
             class Meta:
                 table_name = 'polymorphic_table'
@@ -1575,7 +1571,6 @@ class ModelTestCase(TestCase):
         class ChildModel(ParentModel, discriminator='Child'):
             foo = UnicodeAttribute()
 
-        # register a model that subclasses Child to ensure queries return model subclasses
         class GrandchildModel(ChildModel, discriminator='Grandchild'):
             bar = UnicodeAttribute()
 
@@ -1610,7 +1605,7 @@ class ModelTestCase(TestCase):
 
         with patch(PATCH_METHOD) as req:
             req.return_value = {'Count': 0, 'ScannedCount': 0, 'Items': []}
-            for item in ChildModel.query('foo'):
+            for _ in ChildModel.query('foo'):
                 pass
             params = {
                 'KeyConditionExpression': '#0 = :0',
@@ -1666,12 +1661,11 @@ class ModelTestCase(TestCase):
 
         def fake_scan(*args):
             scan_items = BATCH_GET_ITEMS.get(RESPONSES).get(UserModel.Meta.table_name)
-            data = {
+            return {
                 CAMEL_COUNT: len(scan_items),
                 ITEMS: scan_items,
                 SCANNED_COUNT: 2 * len(scan_items),
             }
-            return data
 
         mock_scan = MagicMock()
         mock_scan.side_effect = fake_scan
@@ -1727,13 +1721,12 @@ class ModelTestCase(TestCase):
                 scan_items = BATCH_GET_ITEMS.get(RESPONSES).get(UserModel.Meta.table_name)[item_idx:item_idx + 1]
             else:
                 scan_items = BATCH_GET_ITEMS.get(RESPONSES).get(UserModel.Meta.table_name)[:1]
-            data = {
+            return {
                 CAMEL_COUNT: len(scan_items),
                 ITEMS: scan_items,
                 SCANNED_COUNT: 2 * len(scan_items),
                 LAST_EVALUATED_KEY: scan_items[-1] if len(scan_items) else None
             }
-            return data
 
         mock_scan = MagicMock()
         mock_scan.side_effect = fake_scan
@@ -1980,7 +1973,7 @@ class ModelTestCase(TestCase):
             if REQUEST_ITEMS in kwargs:
                 batch_item = kwargs.get(REQUEST_ITEMS).get(UserModel.Meta.table_name).get(KEYS)[0]
                 batch_items = kwargs.get(REQUEST_ITEMS).get(UserModel.Meta.table_name).get(KEYS)[1:]
-                response = {
+                return {
                     UNPROCESSED_KEYS: {
                         UserModel.Meta.table_name: {
                             KEYS: batch_items
@@ -1990,7 +1983,6 @@ class ModelTestCase(TestCase):
                         UserModel.Meta.table_name: [batch_item]
                     }
                 }
-                return response
             return {}
 
         batch_get_mock = MagicMock()
@@ -2048,25 +2040,27 @@ class ModelTestCase(TestCase):
     def test_batch_write_with_unprocessed(self):
         picture_blob = b'FFD8FFD8'
 
-        items = []
-        for idx in range(10):
-            items.append(UserModel(
+        items = [UserModel(
                 'daniel',
                 '{}'.format(idx),
                 picture=picture_blob,
-            ))
-
-        unprocessed_items = []
-        for idx in range(5, 10):
-            unprocessed_items.append({
+            ) for idx in range(10)]
+        unprocessed_items = [
+            {
                 'PutRequest': {
                     'Item': {
                         'custom_username': {STRING: 'daniel'},
                         'user_id': {STRING: '{}'.format(idx)},
-                        'picture': {BINARY: base64.b64encode(picture_blob).decode(DEFAULT_ENCODING)}
+                        'picture': {
+                            BINARY: base64.b64encode(picture_blob).decode(
+                                DEFAULT_ENCODING
+                            )
+                        },
                     }
                 }
-            })
+            }
+            for idx in range(5, 10)
+        ]
 
         with patch(PATCH_METHOD) as req:
             req.side_effect = [
@@ -2090,22 +2084,16 @@ class ModelTestCase(TestCase):
             self.assertEqual(len(req.mock_calls), 3)
 
     def test_batch_write_raises_put_error(self):
-        items = []
-        for idx in range(10):
-            items.append(BatchModel(
+        items = [BatchModel(
                 '{}'.format(idx)
-            ))
-
-        unprocessed_items = []
-        for idx in range(5, 10):
-            unprocessed_items.append({
+            ) for idx in range(10)]
+        unprocessed_items = [{
                 'PutRequest': {
                     'Item': {
                         'user_name': {STRING: 'daniel'},
                     }
                 }
-            })
-
+            } for _ in range(5, 10)]
         with patch(PATCH_METHOD) as req:
             req.side_effect = [
                 {
@@ -2152,10 +2140,15 @@ class ModelTestCase(TestCase):
                 item['email'] = {STRING: 'id-{}'.format(idx)}
                 items.append(item)
             req.return_value = {'Count': len(items), 'ScannedCount': len(items), 'Items': items}
-            queried = []
+            queried = [
+                item.serialize()
+                for item in IndexedModel.email_index.query(
+                    'foo',
+                    filter_condition=IndexedModel.user_name.startswith('bar'),
+                    limit=2,
+                )
+            ]
 
-            for item in IndexedModel.email_index.query('foo', filter_condition=IndexedModel.user_name.startswith('bar'), limit=2):
-                queried.append(item.serialize())
 
             params = {
                 'KeyConditionExpression': '#0 = :0',
@@ -2187,13 +2180,16 @@ class ModelTestCase(TestCase):
                 item['email'] = {STRING: 'id-{}'.format(idx)}
                 items.append(item)
             req.return_value = {'Count': len(items), 'ScannedCount': len(items), 'Items': items}
-            queried = []
-
-            for item in LocalIndexedModel.email_index.query(
+            queried = [
+                item.serialize()
+                for item in LocalIndexedModel.email_index.query(
                     'foo',
-                    filter_condition=LocalIndexedModel.user_name.startswith('bar') & LocalIndexedModel.aliases.contains('baz'),
-                    limit=1):
-                queried.append(item.serialize())
+                    filter_condition=LocalIndexedModel.user_name.startswith('bar')
+                    & LocalIndexedModel.aliases.contains('baz'),
+                    limit=1,
+                )
+            ]
+
 
             params = {
                 'KeyConditionExpression': '#0 = :0',
@@ -2228,13 +2224,17 @@ class ModelTestCase(TestCase):
                 item['user_name'] = {STRING: 'id-{}'.format(idx)}
                 items.append(item)
             req.return_value = {'Count': len(items), 'ScannedCount': len(items), 'Items': items}
-            queried = []
-
-            for item in CustomAttrNameModel.uid_index.query(
+            queried = [
+                item.serialize()
+                for item in CustomAttrNameModel.uid_index.query(
                     'foo',
-                    filter_condition=CustomAttrNameModel.overidden_user_name.startswith('bar'),
-                    limit=2):
-                queried.append(item.serialize())
+                    filter_condition=CustomAttrNameModel.overidden_user_name.startswith(
+                        'bar'
+                    ),
+                    limit=2,
+                )
+            ]
+
 
             params = {
                 'KeyConditionExpression': '#0 = :0',
@@ -2343,12 +2343,11 @@ class ModelTestCase(TestCase):
         scope_args = {'count': 0}
 
         def fake_dynamodb(*args, **kwargs):
-            if scope_args['count'] == 0:
-                scope_args['count'] += 1
-                raise ClientError({'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Not Found'}},
-                                  "DescribeTable")
-            else:
+            if scope_args['count'] != 0:
                 return {}
+            scope_args['count'] += 1
+            raise ClientError({'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Not Found'}},
+                              "DescribeTable")
 
         fake_db = MagicMock()
         fake_db.side_effect = fake_dynamodb
@@ -2438,12 +2437,11 @@ class ModelTestCase(TestCase):
         scope_args = {'count': 0}
 
         def fake_dynamodb(*args, **kwargs):
-            if scope_args['count'] == 0:
-                scope_args['count'] += 1
-                raise ClientError({'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Not Found'}},
-                                  "DescribeTable")
-            else:
+            if scope_args['count'] != 0:
                 return {}
+            scope_args['count'] += 1
+            raise ClientError({'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Not Found'}},
+                              "DescribeTable")
 
         fake_db = MagicMock()
         fake_db.side_effect = fake_dynamodb
